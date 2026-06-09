@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reittiennuste – Kartta</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0c0f;color:#e8e4dc;font-family:'Syne',sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+:root{--rail:#1a9e6e;--rail-dim:#0d5c40;--warn:#e8a020;--danger:#d44b2a;--safe:#1a9e6e;--bg:#0a0c0f;--bg2:#111418;--bg3:#181d22;--border:#252b32;--text:#e8e4dc;--muted:#6b7280;--mono:'DM Mono',monospace}
+.topbar{background:var(--bg2);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;gap:16px;flex-shrink:0;z-index:1000}
+.brand{display:flex;align-items:center;gap:10px}
+.rail-icon{width:36px;height:36px;background:var(--rail-dim);border:1.5px solid var(--rail);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.brand-name{font-size:17px;font-weight:800;color:#fff}
+.brand-sub{font-size:11px;color:var(--muted);font-family:var(--mono)}
+.nav-links{margin-left:auto;display:flex;gap:6px}
+.nav-btn{background:var(--bg3);border:1px solid var(--border);color:var(--muted);font-family:var(--mono);font-size:12px;padding:6px 12px;border-radius:7px;cursor:pointer;text-decoration:none;transition:all .15s;white-space:nowrap}
+.nav-btn:hover{border-color:var(--rail);color:var(--text)}
+.nav-btn.active{border-color:var(--rail);color:var(--rail);background:#0d1f18}
+.map-wrap{flex:1;display:flex;position:relative;overflow:hidden}
+#map{flex:1}
+.leaflet-container{background:#0a0c0f!important}
+.leaflet-tile-pane{filter:brightness(.28) saturate(.3) hue-rotate(190deg)}
+.side-panel{width:200px;background:var(--bg2);border-left:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
+.panel-section{padding:14px 14px 10px;border-bottom:1px solid var(--border)}
+.panel-label{font-size:10px;font-family:var(--mono);color:var(--muted);letter-spacing:1.3px;text-transform:uppercase;margin-bottom:8px}
+.filter-btn{display:block;width:100%;text-align:left;background:var(--bg3);border:1px solid var(--border);color:var(--muted);font-family:var(--mono);font-size:12px;padding:7px 10px;border-radius:6px;cursor:pointer;transition:all .15s;margin-bottom:4px}
+.filter-btn:hover{border-color:var(--rail);color:var(--text)}
+.filter-btn.active{background:#0d1f18;border-color:var(--rail);color:var(--rail)}
+.hidden{display:none!important}
+.stat-row{padding:10px 14px;font-family:var(--mono);font-size:11px;color:var(--muted);border-bottom:1px solid var(--border)}
+.stat-val{color:var(--text);font-weight:600}
+.legend-section{padding:12px 14px}
+.leg-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-family:var(--mono);font-size:11px;color:var(--text)}
+.ldot{width:11px;height:11px;border-radius:50%;flex-shrink:0}
+.ldia{width:10px;height:10px;transform:rotate(45deg);flex-shrink:0;border:1.5px solid rgba(0,0,0,.6)}
+.leg-sep{height:1px;background:var(--border);margin:8px 0}
+.status-bar{position:absolute;bottom:0;left:0;right:200px;background:rgba(17,20,24,.85);border-top:1px solid var(--border);padding:5px 12px;font-family:var(--mono);font-size:11px;color:var(--muted);z-index:500}
+.status-bar.live{color:var(--rail)}
+.status-bar.err{color:var(--danger)}
+.leaflet-popup-content-wrapper{background:rgba(17,20,24,.97);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:'Syne',sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.6)}
+.leaflet-popup-tip{background:var(--bg2)}
+.leaflet-popup-content{margin:12px 16px;font-size:13px;line-height:1.6}
+.leaflet-popup-content b{color:#fff}
+.leaflet-control-zoom a{background:var(--bg2)!important;border-color:var(--border)!important;color:var(--text)!important}
+.leaflet-control-attribution{background:rgba(10,12,15,.8)!important;color:var(--muted)!important;font-size:10px!important}
+.leaflet-control-attribution a{color:var(--rail)!important}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">
+    <div class="rail-icon">🚆</div>
+    <div>
+      <div class="brand-name">Reittiennuste</div>
+      <div class="brand-sub">Ratakartta · Live</div>
+    </div>
+  </div>
+  <div class="nav-links">
+    <a href="reittiennuste.html" class="nav-btn">← Ennuste</a>
+    <span class="nav-btn active">Kartta</span>
+  </div>
+</div>
+<div class="map-wrap">
+  <div id="map"></div>
+  <div class="side-panel">
+    <div class="panel-section">
+      <div class="panel-label">Näyttötapa</div>
+      <button class="filter-btn active" id="vStations" onclick="setView('stations')">Asemat</button>
+      <button class="filter-btn"        id="vTrains"   onclick="setView('trains')">Junat</button>
+      <button class="filter-btn"        id="vBoth"     onclick="setView('both')">Molemmat</button>
+    </div>
+    <div class="panel-section hidden" id="trainTypeSection">
+      <div class="panel-label">Junatyyppi</div>
+      <button class="filter-btn active" id="fPassenger" onclick="setFilter('passenger')">Matkustajajunat</button>
+      <button class="filter-btn"        id="fCargo"     onclick="setFilter('cargo')">Tavarajunat</button>
+      <button class="filter-btn"        id="fBoth2"     onclick="setFilter('both')">Molemmat</button>
+    </div>
+    <div class="stat-row hidden" id="statBlock">
+      Junia: <span class="stat-val" id="statTotal">-</span><br>
+      Myohassa: <span class="stat-val" id="statLate">-</span><br>
+      Ka. viive: <span class="stat-val" id="statAvg">-</span>
+    </div>
+    <div class="legend-section">
+      <div class="panel-label" style="margin-bottom:10px">Selitykset</div>
+      <div id="leg-trains">
+        <div class="leg-row"><div class="ldot" style="background:#5b8fd4"></div>Etuajassa</div>
+        <div class="leg-row"><div class="ldot" style="background:var(--safe)"></div>Ajallaan &lt;2 min</div>
+        <div class="leg-row"><div class="ldot" style="background:var(--warn)"></div>Myohassa 2-10 min</div>
+        <div class="leg-row"><div class="ldot" style="background:var(--danger)"></div>Myohassa &gt;10 min</div>
+
+      </div>
+      <div class="leg-sep" id="leg-sep"></div>
+      <div id="leg-stations">
+        <div class="leg-row"><div class="ldia" style="background:var(--safe)"></div>Tasmallinen &lt;22%</div>
+        <div class="leg-row"><div class="ldia" style="background:var(--warn)"></div>Kohtalainen 22-30%</div>
+        <div class="leg-row"><div class="ldia" style="background:var(--danger)"></div>Myohastelee &gt;30%</div>
+        <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:8px;line-height:1.5">Koko = vuoroja/vrk<br>Tilastollisia arvioita<br>Fintraffic 2022-2024<br>Kansallinen ka. 22%</div>
+      </div>
+    </div>
+  </div>
+  <div class="status-bar" id="statusBar">Ladataan...</div>
+</div>
+<script>
+// Varirajat - SAMAT kaikkialla
+function trainColor(d){if(d<=-2)return'#5b8fd4';if(d<=2)return'#1a9e6e';if(d<=10)return'#e8a020';return'#d44b2a';}
+function stationColor(r){if(r<22)return'#1a9e6e';if(r<30)return'#e8a020';return'#d44b2a';}
+
+var viewMode='stations', filterMode='passenger';
+var map,railLayer,stationGroup,trainGroup,liveData=[];
+
+map=L.map('map',{center:[64.5,26.0],zoom:6,zoomControl:true});
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  attribution:'OpenStreetMap | Digitraffic CC BY 4.0',maxZoom:18
+}).addTo(map);
+railLayer=L.layerGroup().addTo(map);
+stationGroup=L.layerGroup().addTo(map);
+trainGroup=L.layerGroup().addTo(map);
+
+// Rataviivat - Overpass API (oikeat ratageometriat)
+async function fetchRailNetwork(){
+  try{
+    var q='[out:json][timeout:60];(way["railway"="rail"]["usage"="main"](59.5,19.5,70.5,31.5);way["railway"="rail"]["usage"="branch"](59.5,19.5,70.5,31.5););out geom qt;';
+    var r=await fetch('https://overpass-api.de/api/interpreter',{
+      method:'POST',
+      body:'data='+encodeURIComponent(q),
+      headers:{'Content-Type':'application/x-www-form-urlencoded','User-Agent':'Reittiennuste/1.0'}
+    });
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    var data=await r.json();
+    var features=(data.elements||[]).filter(function(w){return w.geometry&&w.geometry.length>1;}).map(function(w){
+      return{type:'Feature',geometry:{type:'LineString',coordinates:w.geometry.map(function(p){return[p.lon,p.lat];})}};
+    });
+    L.geoJSON({type:'FeatureCollection',features:features},{
+      style:{color:'#3d7ab5',weight:1.8,opacity:0.75}
+    }).addTo(railLayer);
+  }catch(e){
+    console.warn('Overpass virhe:',e.message);
+    // Fallback: piirretaan karkeammat viivat jos API ei vastaa
+    var FB=[
+      [[60.172,24.941],[60.199,24.933],[60.292,25.044],[60.404,25.104],[60.473,25.089],[60.629,24.861],[60.736,24.775],[61.001,24.473],[60.910,24.640],[61.498,23.761],[62.787,22.832],[63.838,23.132],[63.904,23.909],[64.072,24.555],[64.810,25.410],[65.012,25.465],[65.848,24.144],[66.503,25.722]],
+      [[60.172,24.941],[60.070,23.660],[60.380,23.130],[60.455,22.268]],
+      [[61.498,23.761],[61.166,23.864],[60.455,22.268]],
+      [[61.498,23.761],[61.483,21.764]],
+      [[60.868,26.703],[60.981,25.658],[61.688,27.273],[62.303,27.142],[62.892,27.678],[63.360,27.390],[63.547,29.135]],
+      [[60.868,26.703],[60.910,27.480],[61.059,28.184],[61.172,28.764]],
+      [[60.868,26.703],[60.740,26.830],[60.470,26.940]],
+      [[65.012,25.465],[64.227,27.730],[62.892,27.678]],
+      [[62.303,27.142],[62.597,29.761]],[[ 61.498,23.761],[61.680,24.360],[61.865,25.186],[62.242,25.747]],
+      [[62.787,22.832],[61.680,24.360]],[[62.597,29.761],[63.547,29.135]],[[62.242,25.747],[62.622,27.123]]
+    ];
+    FB.forEach(function(coords){L.polyline(coords,{color:'#3d7ab5',weight:1.8,opacity:0.7}).addTo(railLayer);});
+  }
+}
+
+// Asemadata
+var SD={
+  HKI:{name:"Helsinki",lat:60.1719,lon:24.9414,lateRate:16,volume:280},
+  PSL:{name:"Pasila",lat:60.1993,lon:24.9334,lateRate:17,volume:220},
+  TKL:{name:"Tikkurila",lat:60.2924,lon:25.044,lateRate:18,volume:160},
+  KE:{name:"Kerava",lat:60.404,lon:25.104,lateRate:19,volume:90},
+  JR:{name:"Jarvenpaa",lat:60.4734,lon:25.0885,lateRate:20,volume:70},
+  HYR:{name:"Hyvinkaa",lat:60.6288,lon:24.8609,lateRate:21,volume:50},
+  RI:{name:"Riihimaki",lat:60.7356,lon:24.7751,lateRate:22,volume:60},
+  HMN:{name:"Hameenlinna",lat:61.0014,lon:24.4728,lateRate:21,volume:40},
+  TVR:{name:"Turenki",lat:60.91,lon:24.64,lateRate:20,volume:30},
+  TPE:{name:"Tampere",lat:61.4978,lon:23.761,lateRate:19,volume:120},
+  LMI:{name:"Lempaala",lat:61.3161,lon:23.7524,lateRate:18,volume:35},
+  TOL:{name:"Toijala",lat:61.166,lon:23.8638,lateRate:21,volume:30},
+  LH:{name:"Lahti",lat:60.9811,lon:25.6579,lateRate:21,volume:80},
+  KV:{name:"Kouvola",lat:60.8682,lon:26.7029,lateRate:24,volume:65},
+  LR:{name:"Lappeenranta",lat:61.0587,lon:28.1842,lateRate:26,volume:45},
+  IMR:{name:"Imatra",lat:61.1724,lon:28.7642,lateRate:28,volume:38},
+  LUS:{name:"Luumaki",lat:60.91,lon:27.48,lateRate:23,volume:25},
+  MKI:{name:"Mikkeli",lat:61.6879,lon:27.2732,lateRate:25,volume:40},
+  JNS:{name:"Joensuu",lat:62.5972,lon:29.7613,lateRate:30,volume:50},
+  PHK:{name:"Pieksamaki",lat:62.3025,lon:27.1415,lateRate:27,volume:45},
+  KUO:{name:"Kuopio",lat:62.8924,lon:27.678,lateRate:29,volume:55},
+  SIM:{name:"Siilinjarvi",lat:63.08,lon:27.66,lateRate:30,volume:28},
+  LPI:{name:"Lapinlahti",lat:63.36,lon:27.39,lateRate:31,volume:20},
+  IIS:{name:"Iisalmi",lat:63.56,lon:27.19,lateRate:32,volume:25},
+  SUO:{name:"Suonenjoki",lat:62.6225,lon:27.1227,lateRate:28,volume:18},
+  VRP:{name:"Varkaus",lat:62.31,lon:27.87,lateRate:29,volume:22},
+  NRM:{name:"Nurmes",lat:63.5469,lon:29.1352,lateRate:34,volume:15},
+  SEI:{name:"Seinajoki",lat:62.7867,lon:22.8324,lateRate:23,volume:55},
+  KAN:{name:"Kannus",lat:63.9036,lon:23.9094,lateRate:26,volume:22},
+  KKS:{name:"Kokkola",lat:63.8376,lon:23.1316,lateRate:25,volume:35},
+  KAU:{name:"Kauhava",lat:63.1,lon:23.08,lateRate:23,volume:18},
+  YV:{name:"Ylivieska",lat:64.072,lon:24.5546,lateRate:28,volume:28},
+  LIM:{name:"Liminka",lat:64.81,lon:25.41,lateRate:30,volume:20},
+  OL:{name:"Oulu",lat:65.0121,lon:25.4651,lateRate:27,volume:70},
+  ROI:{name:"Rovaniemi",lat:66.5034,lon:25.7218,lateRate:34,volume:35},
+  KAJ:{name:"Kajaani",lat:64.2268,lon:27.7295,lateRate:31,volume:25},
+  TUR:{name:"Turku",lat:60.4549,lon:22.268,lateRate:18,volume:75},
+  SLO:{name:"Salo",lat:60.38,lon:23.13,lateRate:19,volume:30},
+  KKK:{name:"Karjaa",lat:60.07,lon:23.66,lateRate:20,volume:25},
+  PKY:{name:"Pori",lat:61.4834,lon:21.764,lateRate:25,volume:30},
+  OKK:{name:"Orivesi",lat:61.68,lon:24.36,lateRate:22,volume:20},
+  JMS:{name:"Jamsa",lat:61.8653,lon:25.186,lateRate:23,volume:18},
+  SMH:{name:"Savonlinna",lat:61.8697,lon:28.886,lateRate:31,volume:18},
+  KOT:{name:"Kotka",lat:60.47,lon:26.94,lateRate:23,volume:22},
+  JY:{name:"Jyvaskyla",lat:62.2416,lon:25.7473,lateRate:22,volume:40}
+};
+
+// Viivastymissyyt - taydet infotekstit
+var DC=[
+  {id:"saa",n:"Saaolosuhteet",i:"Yllattavat myrskyvahingot, tulvat, roudan aiheuttamat radanvauriot, sumuvaikutukset, liukkaus kiskoilla ja aarimaaiset lampotilanvaihtelut. Erityisesti talvisin merkittavin yksittainen hairiotekija.",t:28,k:18,s:12,y:20},
+  {id:"rata",n:"Rataverkon viat",i:"Sahkokatkot ajojohtimessa, vaihdeviat, radan geometriaviat, viat opastinjarjestelmissa ja kulunvalvonnassa (ERTMS/ETCS). Suurin syykategoria - n. 46% kaikista myohastymisista (Fintraffic 2024).",t:32,k:35,s:40,y:34},
+  {id:"vaurio",n:"Rataverkon vauriot",i:"Suistumisesta johtuvat ratavauriot, routavaurioiden aiheuttamat pitkaikaiset nopeusrajoitukset seka tieratojen kunnossapitoviiveet. Vaatii usein liikennekatkoja korjaustoiden ajaksi.",t:8,k:18,s:8,y:7},
+  {id:"kalusto",n:"Kalustoviat",i:"Veturi- ja vaunukalustoviat, tekninen vika junassa kesken matkan. VR:n kalustoviat aiheuttavat n. 30% myohastymisista (VR Laaturaportti 2024).",t:18,k:14,s:18,y:16},
+  {id:"onnett",n:"Onnettomuudet ja hairiot",i:"Henkilovahingot radalla, elainonnettomuudet, kolarointi tasoylikaytavilla, ilkivalta kuten kaapelivarkaudet ja graffitit. Namat voivat pysayttaa liikenteen useiksi tunneiksi.",t:7,k:8,s:10,y:11},
+  {id:"muut",n:"Muut syyt",i:"Liikennoitsijan (VR tai muu rautatieyhtion) henkilokuntavaje, kiertyva viivastys aiemmasta vuorosta, matkustajien aiheuttamat viiveet.",t:7,k:7,s:12,y:12}
+];
+function dcVal(cat,ssn){return ssn=='Talvi'?cat.t:ssn=='Kevat'?cat.k:ssn=='Kesa'?cat.s:cat.y;}
+function getSeason(){var m=new Date().getMonth()+1;if(m<=2||m===12)return'Talvi';if(m<=5)return'Kevat';if(m<=8)return'Kesa';return'Syksy';}
+
+function buildReasonsHTML(ssn){
+  return DC.map(function(cat){
+    var val=dcVal(cat,ssn),bar=Math.min(val*2.2,100),col=val<15?'#1a9e6e':val<25?'#e8a020':'#d44b2a';
+    return '<div style="margin-bottom:8px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:3px">'
+      +'<span style="color:#e8e4dc;font-size:11px;font-weight:600">'+cat.n+'</span>'
+      +'<div style="display:flex;align-items:center;gap:5px">'
+      +'<span style="color:'+col+';font-size:11px;font-weight:700;font-family:monospace">'+val+'%</span>'
+      +'<span onclick="toggleInfo(\'ci-'+cat.id+'\')" style="width:14px;height:14px;border-radius:50%;background:#252b32;color:#8b949e;font-size:9px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;border:1px solid #3a4250;font-weight:700">i</span>'
+      +'</div></div>'
+      +'<div style="height:4px;background:#252b32;border-radius:999px;overflow:hidden">'
+      +'<div style="height:100%;width:'+bar+'%;background:'+col+';border-radius:999px"></div></div>'
+      +'<div id="ci-'+cat.id+'" style="display:none;margin-top:5px;padding:6px 8px;background:#181d22;border-radius:6px;border-left:2px solid '+col+';font-size:10px;color:#8b949e;line-height:1.5">'+cat.i+'</div>'
+      +'</div>';
+  }).join('');
+}
+window.toggleInfo=function(id){var el=document.getElementById(id);if(el)el.style.display=el.style.display==='none'?'block':'none';};
+
+function buildDelayBars(ssn){
+  var thr=['5 min','10 min','15 min','20 min','30 min'];
+  var hist={Talvi:[28,17,11,7,4],Kevat:[20,12,8,5,2],Kesa:[11,6,4,2,1],Syksy:[17,10,6,4,2]};
+  var vals=hist[ssn]||hist.Kevat;
+  return vals.map(function(pct,i){
+    var col=pct<15?'#1a9e6e':pct<25?'#e8a020':'#d44b2a';
+    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+      +'<span style="font-family:monospace;font-size:11px;color:#6b7280;width:52px">'+thr[i]+'</span>'
+      +'<div style="flex:1;height:5px;background:#252b32;border-radius:999px;overflow:hidden">'
+      +'<div style="height:100%;width:'+Math.min(pct*2.8,100)+'%;background:'+col+';border-radius:999px"></div></div>'
+      +'<span style="font-family:monospace;font-size:11px;color:'+col+';width:30px;text-align:right">'+pct+'%</span>'
+      +'</div>';
+  }).join('');
+}
+
+window.updateStTab=function(code,ssn){
+  var tabs=document.getElementById('stabs-'+code);
+  if(tabs)tabs.querySelectorAll('span').forEach(function(sp){
+    var on=sp.textContent===ssn;
+    sp.style.background=on?'#1a9e6e':'#252b32';
+    sp.style.color=on?'#000':'#8b949e';
+  });
+  var el=document.getElementById('sreasons-'+code);
+  if(el)el.innerHTML=buildReasonsHTML(ssn);
+  var el2=document.getElementById('sbars-'+code);
+  if(el2)el2.innerHTML=buildDelayBars(ssn);
+};
+
+function buildStations(){
+  stationGroup.clearLayers();
+  var maxVol=Math.max.apply(null,Object.values(SD).map(function(s){return s.volume||20;}));
+  var seasons=['Talvi','Kevat','Kesa','Syksy'];
+  Object.keys(SD).forEach(function(code){
+    var s=SD[code];
+    var clr=stationColor(s.lateRate);
+    var sz=Math.round(10+((s.volume||20)/maxVol)*12);
+    var icon=L.divIcon({
+      html:'<div style="width:'+sz+'px;height:'+sz+'px;background:'+clr+';border:2px solid rgba(0,0,0,.7);transform:rotate(45deg);box-shadow:0 1px 5px rgba(0,0,0,.5);cursor:pointer"></div>',
+      iconSize:[sz+4,sz+4],iconAnchor:[(sz+4)/2,(sz+4)/2],className:''
+    });
+    var marker=L.marker([s.lat,s.lon],{icon:icon,zIndexOffset:500});
+    marker.on('click',function(){
+      var ssn=getSeason();
+      var tabsHtml=seasons.map(function(ss){
+        return '<span onclick="updateStTab(\''+code+'\',\''+ss+'\')" style="padding:3px 8px;border-radius:5px;cursor:pointer;font-size:10px;font-family:monospace;background:'+(ss===ssn?'#1a9e6e':'#252b32')+';color:'+(ss===ssn?'#000':'#8b949e')+'">'+ss+'</span>';
+      }).join('');
+      var html='<div style="min-width:240px">'
+        +'<div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:2px">'+s.name+'</div>'
+        +'<div style="font-size:11px;font-family:monospace;color:#6b7280;margin-bottom:10px">'+(s.volume||20)+' vuoroa/vrk &middot; Tilastollinen arvio</div>'
+        +'<div style="font-size:10px;font-family:monospace;color:#6b7280;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Myohastymisaste (arvio)</div>'
+        +'<div style="font-size:32px;font-weight:800;font-family:monospace;color:'+clr+';margin-bottom:10px">'+s.lateRate+'%</div>'
+        +'<div style="font-size:10px;font-family:monospace;color:#6b7280;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Viivastymiskynnys (tod.nak.)</div>'
+        +'<div id="sbars-'+code+'">'+buildDelayBars(ssn)+'</div>'
+        +'<div style="height:1px;background:#252b32;margin:10px 0"></div>'
+        +'<div style="font-size:10px;font-family:monospace;color:#6b7280;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Yleisimmat viivastymissyyt</div>'
+        +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px" id="stabs-'+code+'">'+tabsHtml+'</div>'
+        +'<div id="sreasons-'+code+'">'+buildReasonsHTML(ssn)+'</div>'
+        +'</div>';
+      L.popup({maxWidth:290,minWidth:240,autoPan:true}).setLatLng([s.lat,s.lon]).setContent(html).openOn(map);
+    });
+    marker.addTo(stationGroup);
+  });
+}
+
+function isPassenger(t){return t.cat==='Long-distance'||t.cat==='Commuter';}
+function isCargo(t){return t.cat==='Cargo';}
+
+function renderTrains(data){
+  trainGroup.clearLayers();
+  var EXCL={TYO:1,PYO:1,PAI:1,HL:1,MV:1,VET:1,SHK:1,V:1};
+  var filt=data.filter(function(t){
+    if(EXCL[t.type])return false;  // suodatetaan tyokaluvaunut jne
+    if(filterMode==='passenger')return isPassenger(t);
+    if(filterMode==='cargo')return isCargo(t);
+    return true;
+  });
+  filt.forEach(function(t){
+    var col=trainColor(t.delay||0);
+    var r=t.speed>80?9:t.speed>20?7:6;
+    var typeLbl=t.type||(t.cat==='Cargo'?'T':t.cat==='Long-distance'?'IC':'');
+    var delayTxt=(t.delay||0)>2?'+'+(t.delay)+' min myohassa':(t.delay||0)<-2?Math.abs(t.delay)+' min etuajassa':'Ajallaan';
+    L.circleMarker([t.lat,t.lon],{radius:r,fillColor:col,color:'#fff',weight:1,fillOpacity:.92})
+      .bindPopup('<b>'+(typeLbl?typeLbl+' ':'')+t.num+'</b><br>Nopeus: <b>'+t.speed+' km/h</b><br>Myohastyminen: <b style="color:'+col+'">'+delayTxt+'</b>')
+      .addTo(trainGroup);
+  });
+  var late=filt.filter(function(t){return(t.delay||0)>2;}).length;
+  var avg=filt.length>0?(filt.reduce(function(s,t){return s+Math.max(0,t.delay||0);},0)/filt.length).toFixed(1):'-';
+  document.getElementById('statTotal').textContent=filt.length;
+  document.getElementById('statLate').textContent=late;
+  document.getElementById('statAvg').textContent=avg+' min';
+  document.getElementById('statBlock').classList.remove('hidden');
+}
+
+async function fetchLiveData(){
+  setStatus('Ladataan...','');
+  try{
+    var r=await fetch('https://rata.digitraffic.fi/api/v1/train-locations/latest/',{headers:{'Digitraffic-User':'Reittiennuste/1.0 Demo'}});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    var locs=await r.json();
+    var today=new Date().toISOString().split('T')[0];
+    var infoR=await fetch('https://rata.digitraffic.fi/api/v1/trains/'+today,{headers:{'Digitraffic-User':'Reittiennuste/1.0 Demo'}}).catch(function(){return null;});
+    var infoMap={};
+    if(infoR&&infoR.ok){
+      var trains=await infoR.json().catch(function(){return[];});
+      if(Array.isArray(trains))trains.forEach(function(t){
+        var rows=t.timeTableRows||[];
+        var lr=null;
+        for(var i=rows.length-1;i>=0;i--){if(rows[i].differenceInMinutes!=null){lr=rows[i];break;}}
+        infoMap[t.trainNumber]={cat:t.trainCategory||'',type:t.trainType||'',delay:lr?lr.differenceInMinutes:0};
+      });
+    }
+    liveData=locs.filter(function(l){return l.location&&l.location.coordinates;}).map(function(l){
+      var info=infoMap[l.trainNumber]||{};
+      return{num:l.trainNumber,type:info.type||'',cat:info.cat||'',lat:l.location.coordinates[1],lon:l.location.coordinates[0],speed:l.speed||0,delay:info.delay||0};
+    });
+    applyView();
+    var t2=new Date().toLocaleTimeString('fi-FI',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    setStatus('LIVE '+t2,'live');
+  }catch(e){setStatus('Virhe: '+e.message,'err');}
+}
+
+function applyView(){
+  if(viewMode==='stations'||viewMode==='both'){if(!map.hasLayer(stationGroup))map.addLayer(stationGroup);}
+  else{if(map.hasLayer(stationGroup))map.removeLayer(stationGroup);}
+  if(viewMode==='trains'||viewMode==='both'){renderTrains(liveData);if(!map.hasLayer(trainGroup))map.addLayer(trainGroup);}
+  else{trainGroup.clearLayers();if(map.hasLayer(trainGroup))map.removeLayer(trainGroup);}
+  var showT=viewMode==='trains'||viewMode==='both';
+  var showS=viewMode==='stations'||viewMode==='both';
+  document.getElementById('leg-trains').style.display=showT?'':'none';
+  document.getElementById('leg-sep').style.display=(showT&&showS)?'':'none';
+  document.getElementById('leg-stations').style.display=showS?'':'none';
+}
+
+function setView(mode){
+  viewMode=mode;
+  ['vStations','vTrains','vBoth'].forEach(function(id){document.getElementById(id).classList.remove('active');});
+  document.getElementById(mode==='stations'?'vStations':mode==='trains'?'vTrains':'vBoth').classList.add('active');
+  document.getElementById('trainTypeSection').classList.toggle('hidden',mode==='stations');
+  applyView();
+}
+
+function setFilter(mode){
+  filterMode=mode;
+  ['fPassenger','fCargo','fBoth2'].forEach(function(id){document.getElementById(id).classList.remove('active');});
+  document.getElementById(mode==='passenger'?'fPassenger':mode==='cargo'?'fCargo':'fBoth2').classList.add('active');
+  renderTrains(liveData);
+}
+
+function setStatus(txt,cls){var el=document.getElementById('statusBar');el.textContent=txt;el.className='status-bar '+cls;}
+
+buildStations();
+fetchRailNetwork();
+fetchLiveData();
+setInterval(fetchLiveData,30000);
+</script>
+</body>
+</html>
