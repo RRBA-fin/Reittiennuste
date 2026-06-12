@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reittiennuste – Rataverkon generointi</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0c0f;color:#e8e4dc;font-family:'Syne',sans-serif;min-height:100vh}
+:root{--rail:#1a9e6e;--warn:#e8a020;--danger:#d44b2a;--bg2:#111418;--bg3:#181d22;--border:#252b32;--muted:#6b7280;--mono:'DM Mono',monospace}
+.app{max-width:720px;margin:0 auto;padding:40px 20px}
+h1{font-size:24px;font-weight:800;color:#fff;margin-bottom:8px}
+.sub{font-size:13px;color:var(--muted);font-family:var(--mono);margin-bottom:28px;line-height:1.6}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:24px;margin-bottom:16px}
+.card p{font-size:13px;line-height:1.7;color:#c8c4bc;margin-bottom:10px}
+.card ol{margin:10px 0 10px 20px;font-size:13px;line-height:1.9;color:#c8c4bc}
+.card code{font-family:var(--mono);font-size:12px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:2px 6px;color:var(--rail)}
+.btn{background:var(--rail);color:#000;font-family:'Syne',sans-serif;font-weight:700;font-size:15px;padding:13px 28px;border:none;border-radius:10px;cursor:pointer;width:100%}
+.btn:hover{background:#1db880}.btn:disabled{background:var(--border);color:var(--muted);cursor:not-allowed}
+.log{font-family:var(--mono);font-size:12px;line-height:1.9;color:var(--muted);margin-top:18px;white-space:pre-wrap}
+.log .ok{color:var(--rail)}.log .err{color:var(--danger)}.log .warn{color:var(--warn)}
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>🚆 Rataverkon generointi</h1>
+  <div class="sub">Tämä työkalu hakee Suomen rataverkon geometrian OpenStreetMapista (Overpass API),<br>
+  yksinkertaistaa sen karttakäyttöön sopivaksi ja lataa valmiin <b>rataverkko.geojson</b>-tiedoston.</div>
+
+  <div class="card">
+    <p><b style="color:#fff">Käyttöohje:</b></p>
+    <ol>
+      <li>Paina alla olevaa nappia ja odota – haku kestää tyypillisesti 20–90 sekuntia.</li>
+      <li>Selain lataa tiedoston <code>rataverkko.geojson</code> automaattisesti.</li>
+      <li>Siirrä tiedosto GitHub-repon juureen samaan kansioon kuin <code>index.html</code>.</li>
+      <li>Karttasivu käyttää tiedostoa jatkossa automaattisesti – Overpass-hakua ei enää tarvita.</li>
+    </ol>
+    <p style="color:var(--muted);font-size:12px">Tiedosto kannattaa generoida uudelleen ehkä kerran vuodessa, tai jos rataverkkoon tulee merkittäviä muutoksia. Lähde: © OpenStreetMap contributors (ODbL).</p>
+  </div>
+
+  <div class="card">
+    <button class="btn" id="genBtn" onclick="generate()">Hae ja generoi rataverkko.geojson</button>
+    <div class="log" id="log"></div>
+  </div>
+</div>
+<script>
+var MIRRORS=[
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
+];
+var QUERY='[out:json][timeout:120];(way["railway"="rail"]["usage"="main"](59.5,19.5,70.5,31.5);way["railway"="rail"]["usage"="branch"](59.5,19.5,70.5,31.5););out geom qt;';
+
+function log(msg,cls){
+  var el=document.getElementById('log');
+  var span=document.createElement('div');
+  if(cls)span.className=cls;
+  span.textContent=msg;
+  el.appendChild(span);
+}
+
+// Douglas-Peucker -yksinkertaistus (toleranssi asteina; ~0.0006° ≈ 50–65 m)
+function simplifyDP(points,tol){
+  if(points.length<3)return points;
+  var sqTol=tol*tol;
+  function sqSegDist(p,a,b){
+    var x=a[0],y=a[1],dx=b[0]-x,dy=b[1]-y;
+    if(dx!==0||dy!==0){
+      var t=((p[0]-x)*dx+(p[1]-y)*dy)/(dx*dx+dy*dy);
+      if(t>1){x=b[0];y=b[1];}
+      else if(t>0){x+=dx*t;y+=dy*t;}
+    }
+    dx=p[0]-x;dy=p[1]-y;
+    return dx*dx+dy*dy;
+  }
+  function step(pts,first,last,out){
+    var maxD=sqTol,index=-1;
+    for(var i=first+1;i<last;i++){
+      var d=sqSegDist(pts[i],pts[first],pts[last]);
+      if(d>maxD){index=i;maxD=d;}
+    }
+    if(index>-1){
+      if(index-first>1)step(pts,first,index,out);
+      out.push(pts[index]);
+      if(last-index>1)step(pts,index,last,out);
+    }
+  }
+  var out=[points[0]];
+  step(points,0,points.length-1,out);
+  out.push(points[points.length-1]);
+  return out;
+}
+
+async function generate(){
+  var btn=document.getElementById('genBtn');
+  btn.disabled=true;btn.textContent='Haetaan...';
+  document.getElementById('log').innerHTML='';
+  var data=null;
+  for(var i=0;i<MIRRORS.length;i++){
+    log('Yritetään: '+MIRRORS[i]+' ...');
+    try{
+      var r=await fetch(MIRRORS[i],{
+        method:'POST',
+        body:'data='+encodeURIComponent(QUERY),
+        headers:{'Content-Type':'application/x-www-form-urlencoded'}
+      });
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      data=await r.json();
+      log('✓ Vastaus saatu ('+(data.elements||[]).length+' rataosuutta)','ok');
+      break;
+    }catch(e){
+      log('✗ '+e.message+' – kokeillaan seuraavaa peiliä','warn');
+    }
+  }
+  if(!data||!(data.elements||[]).length){
+    log('Kaikki Overpass-peilit epäonnistuivat. Yritä hetken päästä uudelleen.','err');
+    btn.disabled=false;btn.textContent='Hae ja generoi rataverkko.geojson';
+    return;
+  }
+
+  btn.textContent='Käsitellään...';
+  var TOL=0.0006; // ~50-65 m – riittävä zoomtasoille 5-10
+  var ptsIn=0,ptsOut=0;
+  var features=[];
+  data.elements.forEach(function(w){
+    if(!w.geometry||w.geometry.length<2)return;
+    var coords=w.geometry.map(function(p){return[p.lon,p.lat];});
+    ptsIn+=coords.length;
+    var simp=simplifyDP(coords,TOL).map(function(c){
+      return[Math.round(c[0]*1e4)/1e4,Math.round(c[1]*1e4)/1e4]; // 4 desimaalia ≈ 10 m
+    });
+    if(simp.length<2)return;
+    ptsOut+=simp.length;
+    features.push({type:'Feature',properties:{},geometry:{type:'LineString',coordinates:simp}});
+  });
+
+  var fc={type:'FeatureCollection',
+    properties:{source:'© OpenStreetMap contributors (ODbL)',generated:new Date().toISOString().split('T')[0]},
+    features:features};
+  var json=JSON.stringify(fc);
+  log('✓ Yksinkertaistettu: '+ptsIn.toLocaleString('fi-FI')+' → '+ptsOut.toLocaleString('fi-FI')+' pistettä','ok');
+  log('✓ Tiedostokoko: '+(json.length/1024).toFixed(0)+' kt ('+features.length+' viivaa)','ok');
+
+  var blob=new Blob([json],{type:'application/geo+json'});
+  var aEl=document.createElement('a');
+  aEl.href=URL.createObjectURL(blob);
+  aEl.download='rataverkko.geojson';
+  document.body.appendChild(aEl);
+  aEl.click();
+  aEl.remove();
+  log('✓ Lataus käynnistetty: rataverkko.geojson → siirrä repon juureen','ok');
+  btn.disabled=false;btn.textContent='Hae ja generoi rataverkko.geojson';
+}
+</script>
+</body>
+</html>
